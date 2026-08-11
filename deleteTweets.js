@@ -1,74 +1,81 @@
-async function deleteTwitterPosts() {
+async function deleteTwitterRepliesAndPosts() {
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   
-  console.log("Starte Twitter/X Lösch-Skript...");
+  console.log("Starte Twitter/X Lösch-Skript (Optimiert für Antworten)...");
 
-  let safetyCounter = 0;
+  let scrollAttempts = 0;
 
   while (true) {
-    // Finde alle sichtbaren Tweets auf der Profilseite
-    const tweets = document.querySelectorAll('article[data-testid="tweet"]');
+    const tweets = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
     
     if (tweets.length === 0) {
-      console.log("Keine Tweets sichtbar. Scrolle nach unten, um mehr zu laden...");
-      window.scrollTo(0, document.body.scrollHeight);
+      console.log("Keine Tweets sichtbar. Scrolle nach unten...");
+      window.scrollBy(0, window.innerHeight);
       await sleep(2500);
       
-      safetyCounter++;
-      if (safetyCounter > 5) {
+      scrollAttempts++;
+      if (scrollAttempts > 8) {
         console.log("Keine weiteren Tweets mehr gefunden. Skript beendet.");
         break;
       }
       continue;
     }
 
-    safetyCounter = 0;
+    scrollAttempts = 0;
+    let processed = false;
 
-    // Nimm den ersten Tweet in der Liste
-    const tweet = tweets[0];
-    
-    // Finde den "Mehr"-Button (drei Punkte) im Tweet
-    const moreBtn = tweet.querySelector('[data-testid="caret"], [aria-label="More"], [aria-label="Mehr"]');
-    if (!moreBtn) {
-      console.log("Konnte Menü-Button nicht finden. Entferne Tweet temporär aus der Ansicht...");
-      tweet.style.display = 'none';
-      continue;
-    }
+    // Gehe die sichtbaren Tweets der Reihe nach durch
+    for (const tweet of tweets) {
+      // Prüfen, ob das Element noch im DOM existiert
+      if (!document.body.contains(tweet)) continue;
 
-    moreBtn.click();
-    await sleep(600);
+      const moreBtn = tweet.querySelector('[data-testid="caret"], [aria-label="More"], [aria-label="Mehr"]');
+      if (!moreBtn) {
+        // Kein Menü-Button gefunden, entferne diesen Container, um Blockaden zu vermeiden
+        tweet.remove();
+        continue;
+      }
 
-    // Finde den "Löschen"-Eintrag im erscheinenden Menü
-    const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
-    const deleteBtn = menuItems.find(item => {
-      const text = item.textContent.toLowerCase();
-      return text.includes('delete') || text.includes('löschen');
-    });
-
-    if (!deleteBtn) {
-      console.log("Keine Löschen-Option (möglicherweise ein Retweet oder angepinnt). Schließe Menü...");
-      document.body.click();
+      moreBtn.click();
       await sleep(500);
-      tweet.style.display = 'none'; // Ausblenden, damit das Skript nicht hängenbleibt
-      continue;
+
+      const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
+      const deleteBtn = menuItems.find(item => {
+        const text = item.textContent.toLowerCase();
+        return text.includes('delete') || text.includes('löschen');
+      });
+
+      // Wenn kein "Löschen"-Button da ist (z.B. fremder Parent-Tweet im Thread)
+      if (!deleteBtn) {
+        document.body.click(); // Menü schließen
+        await sleep(300);
+        tweet.remove(); // Komplett aus dem DOM löschen, damit es nicht stört
+        continue; // Weiter zum nächsten Tweet
+      }
+
+      // Löschen-Button gefunden!
+      deleteBtn.click();
+      await sleep(500);
+
+      const confirmBtn = document.querySelector('[data-testid="confirmationSheetConfirm"]');
+      if (confirmBtn) {
+        confirmBtn.click();
+        console.log("Antwort/Post erfolgreich gelöscht.");
+      } else {
+        document.body.click();
+      }
+
+      processed = true;
+      await sleep(1500); // Kurz warten, damit X die Timeline anpasst
+      break; // Nach einer erfolgreichen Löschung Schleife kurz neu ansetzen
     }
 
-    deleteBtn.click();
-    await sleep(600);
-
-    // Bestätigungs-Dialog im Modal anklicken
-    const confirmBtn = document.querySelector('[data-testid="confirmationSheetConfirm"]');
-    if (confirmBtn) {
-      confirmBtn.click();
-      console.log("Tweet erfolgreich gelöscht.");
-    } else {
-      console.log("Bestätigungs-Button nicht gefunden, breche ab.");
-      document.body.click();
+    // Wenn im aktuellen Durchlauf kein eigener Tweet verarbeitet werden konnte, weiter scrollen
+    if (!processed) {
+      window.scrollBy(0, 600);
+      await sleep(2000);
     }
-
-    // Kurze Pause, damit X die Timeline aktualisieren kann
-    await sleep(1500);
   }
 }
 
-deleteTwitterPosts();
+deleteTwitterRepliesAndPosts();
